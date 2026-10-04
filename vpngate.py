@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+# !/usr/bin/env python3
 """
 VPN Gate SSTP 节点检测流水线
 ===============================
@@ -13,9 +13,9 @@ VPN Gate SSTP 节点检测流水线
   6. 网页端 (GitHub Pages) 读取 data.json 展示
 
 退出码:
-  0 = 正常完成 (允许部分节点检测失败)
-  1 = 硬性失败 (数据源全挂 / 解析不出 SSTP 节点 / Worker 完全不可达 / 程序异常)
-     这些情况绝不允许"假成功"
+   0 = 正常完成 (允许部分节点检测失败)
+   1 = 硬性失败 (数据源全挂 / 解析不出 SSTP 节点 / Worker 完全不可达 / 程序异常)
+      这些情况绝不允许"假成功"
 """
 
 import base64
@@ -51,13 +51,23 @@ VPNGATE_MIRROR = os.environ.get(
     "https://raw.githubusercontent.com/fdciabdul/Vpngate-Scraper-API/main/json/data.json",
 )
 # 已部署的 Cloudflare Worker 检测接口 (GET /check?proxyip=host:port, 实测确认)
-WORKER_CHECK_URL = os.environ.get("CHECK_WORKER", "https://ch.aishaniya-ao.com/check?sstp=vpn:vpn@")
+_DEFAULT_WORKER = "https://ch.aishaniya-ao.com/check?sstp=vpn:vpn@"
+_FALLBACK_WORKER = os.environ.get("CHECK_WORKER_FALLBACK", "https://check.helei.kdns.fr/check?sstp=vpn:vpn@")
+_PRIMARY_WORKER = os.environ.get("CHECK_WORKER", _DEFAULT_WORKER).strip()
+WORKER_CHECK_URLS = []
+for candidate in (_PRIMARY_WORKER, _FALLBACK_WORKER):
+    if candidate and candidate not in WORKER_CHECK_URLS:
+        WORKER_CHECK_URLS.append(candidate)
+if not WORKER_CHECK_URLS:
+    WORKER_CHECK_URLS = [_DEFAULT_WORKER]
+WORKER_CHECK_URL = WORKER_CHECK_URLS[0]
 CONCURRENCY = max(1, int(os.environ.get("CHECK_CONCURRENCY", "32")))   # 与 Worker 网页端一致的并发模型
 CHECK_TIMEOUT = float(os.environ.get("CHECK_TIMEOUT", "90"))          # 单请求客户端超时 (秒)
 MAX_CHECK_NODES = int(os.environ.get("MAX_CHECK_NODES", "0"))         # 0=不限; 本地测试可设小值
 HTTP_TIMEOUT = int(os.environ.get("HTTP_TIMEOUT", "60"))              # 拉取数据源超时
 PUBLIC_DIR = os.environ.get("PUBLIC_DIR", os.path.join(REPO_DIR, "public"))
 TEMPLATE_HTML = os.path.join(REPO_DIR, "web", "index.html")
+ALLOW_EMPTY_RESULTS = os.environ.get("ALLOW_EMPTY_RESULTS", "false").strip().lower() in {"1", "true", "yes", "on"}
 
 # 出口数据中心的关键词启发 (判断"是否住宅 IP"用, 页面标注为估算)
 DATA_CENTER_ORG_KEYWORDS = [
@@ -86,7 +96,7 @@ COUNTRY_ZH = {
     "FI": "芬兰", "NO": "挪威", "DK": "丹麦", "IE": "爱尔兰", "BE": "比利时",
     "AT": "奥地利", "HU": "匈牙利", "AR": "阿根廷", "CL": "智利", "CO": "哥伦比亚",
     "NZ": "新西兰", "ZA": "南非", "IL": "以色列", "AE": "阿联酋", "SA": "沙特",
-    "EG": "埃及", "HR": "克罗地亚", "BY": "白俄罗斯", "GD": "格林纳达",
+    "EG": "埃及", "HR": "克罗地亚", "BY": "白���罗斯", "GD": "格林纳达",
     "LV": "拉脱维亚", "EE": "爱沙尼亚", "LT": "立陶宛", "SK": "斯洛伐克",
     "SI": "斯洛文尼亚", "BG": "保加利亚", "RS": "塞尔维亚", "GE": "格鲁吉亚",
     "MD": "摩尔多瓦", "AM": "亚美尼亚", "KZ": "哈萨克斯坦", "UZ": "乌兹别克斯坦",
@@ -307,10 +317,13 @@ def classify_network(host, exit_org, is_datacenter=None):
     return "unknown"
 
 
+def build_worker_url(host, port, worker_url):
+    return worker_url + quote(f"{host}:{port}", safe="")
+
+
 def check_one(node, session):
     """调用 Worker 检测单节点。返回节点+检测结果的合并 dict。
     单节点失败 (网络错误/非 200/坏 JSON) 不会抛出, 统一记 success=False。"""
-    url = WORKER_CHECK_URL + quote(f"{node['host']}:{node['port']}", safe="")
     out = dict(node)
     out["protocol"] = "sstp"
     out["link"] = f"sstp://vpn:vpn@{node['host']}:{node['port']}"
@@ -318,43 +331,53 @@ def check_one(node, session):
     out["checked_at"] = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     out["exit"] = None
     out["residential"] = "unknown"
-    try:
-        r = session.get(url, timeout=CHECK_TIMEOUT, headers={"User-Agent": "Mozilla/5.0 (gate-checker)"})
-        if r.status_code != 200:
-            out["error"] = f"HTTP {r.status_code}"
-            out["worker_error"] = True
+
+    last_error = None
+    for worker_url in WORKER_CHECK_URLS:
+        url = build_worker_url(node["host"], node["port"], worker_url)
+        try:
+            r = session.get(url, timeout=CHECK_TIMEOUT, headers={"User-Agent": "Mozilla/5.0 (gate-checker)"})
+            if r.status_code != 200:
+                last_error = f"HTTP {r.status_code}"
+                out["error"] = last_error
+                out["worker_error"] = True
+                continue
+            j = r.json()
+            ok = bool(j.get("success"))
+            out["success"] = ok
+            out["status"] = "success" if ok else "failed"
+            out["latency_ms"] = j.get("responseTime")
+            out["colo"] = j.get("colo")
+            out["error"] = (None if ok else (j.get("error") or j.get("message") or "check failed"))
+            # SSTP 版 Worker: 顶层直接返回 exit, 含真实 is_datacenter 标志 + 嵌套 asn 对象
+            exit_info = j.get("exit") or {}
+            if exit_info:
+                asn = exit_info.get("asn") or {}
+                org = asn.get("org") or asn.get("name") or ""
+                out["exit"] = {
+                    "ip": exit_info.get("ip"),
+                    "country": exit_info.get("country"),
+                    "country_code": exit_info.get("country_code"),
+                    "city": exit_info.get("city"),
+                    "continent": exit_info.get("continent"),
+                    "asn": asn.get("asn"),
+                    "org": org,
+                    "type": asn.get("type"),
+                    "is_datacenter": exit_info.get("is_datacenter"),
+                }
+                out["residential"] = classify_network(out["host"], org, exit_info.get("is_datacenter"))
+            else:
+                out["residential"] = classify_network(out["host"], None, None)
             return out
-        j = r.json()
-        ok = bool(j.get("success"))
-        out["success"] = ok
-        out["status"] = "success" if ok else "failed"
-        out["latency_ms"] = j.get("responseTime")
-        out["colo"] = j.get("colo")
-        out["error"] = (None if ok else (j.get("error") or j.get("message") or "check failed"))
-        # SSTP 版 Worker: 顶层直接返回 exit, 含真实 is_datacenter 标志 + 嵌套 asn 对象
-        exit_info = j.get("exit") or {}
-        if exit_info:
-            asn = exit_info.get("asn") or {}
-            org = asn.get("org") or asn.get("name") or ""
-            out["exit"] = {
-                "ip": exit_info.get("ip"),
-                "country": exit_info.get("country"),
-                "country_code": exit_info.get("country_code"),
-                "city": exit_info.get("city"),
-                "continent": exit_info.get("continent"),
-                "asn": asn.get("asn"),
-                "org": org,
-                "type": asn.get("type"),
-                "is_datacenter": exit_info.get("is_datacenter"),
-            }
-            out["residential"] = classify_network(out["host"], org, exit_info.get("is_datacenter"))
-        else:
-            out["residential"] = classify_network(out["host"], None, None)
-        return out
-    except Exception as exc:
-        out["error"] = f"{type(exc).__name__}: {exc}"
-        out["worker_error"] = True
-        return out
+        except Exception as exc:
+            last_error = f"{type(exc).__name__}: {exc}"
+            out["error"] = last_error
+            out["worker_error"] = True
+            continue
+
+    out["worker_error"] = True
+    out["error"] = last_error or "all worker checks failed"
+    return out
 
 
 def check_all(nodes, session):
@@ -419,7 +442,7 @@ def build_chains_text(data):
         f"# 自动更新: {data['generated_at']} (每 30 分钟重新检测)",
         f"# 固定地址: {CHAIN_URL}",
         "#",
-        "# 用法: 在 edgetunnel 节点备注里直接粘贴下面任意一行 (名字与指令连写)",
+        "# 用法: 在 edgetunnel 节点备注里直接粘贴���面任意一行 (名字与指令连写)",
         "#   例: 日本-住宅-01$sstp://vpn:vpn@vpnxxx.opengw.net:443",
         "# 名字保持不变, 只有 $sstp:// 后面的地址每 30 分钟自动更换",
         "# 账号密码固定 vpn:vpn ; 端口必须保留",
@@ -692,7 +715,10 @@ def main():
 
     # 硬性失败: Worker 完全不可达 (没有任何一个请求拿到正常响应)
     if uniq and not success and len(worker_errors) == len(uniq):
-        die("Worker 全部请求异常, 检测服务不可用 — 本次运行判定失败 (不生成空结果)")
+        if ALLOW_EMPTY_RESULTS:
+            log("CLOUDFLARE WORKER", "所有 Worker 都异常，但已开启 ALLOW_EMPTY_RESULTS；继续生成空结果页并退出 0")
+        else:
+            die("Worker 全部请求异常, 检测服务不可用 — 本次运行判定失败 (不生成空结果)")
 
     # 4) 结果 + 网页
     data = build_outputs(results, raw_count, sstp_count, source)
