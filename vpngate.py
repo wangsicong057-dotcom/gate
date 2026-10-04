@@ -456,6 +456,18 @@ def build_chains_text(data):
 
 # edgetunnel 入口地址池: 客户端直连 Cloudflare 的优选 IP:端口 (循环分配给每个国家节点当入口)
 # 可通过环境变量 EDGE_HOSTS 覆盖 (逗号分隔)
+def parse_edge_hosts(raw):
+    """兼容多种格式: 逗号分隔、空格、尾随逗号都能安全解析。"""
+    if raw is None:
+        return []
+    hosts = []
+    for item in str(raw).split(","):
+        host = item.strip().replace(" ", "")
+        if host and ":" in host:
+            hosts.append(host)
+    return hosts
+
+
 DEFAULT_EDGE_HOSTS = (
     "aandd.co.jp:2096,dx.doi.org:2096,vayyar.com:8443,"
     "tracker.metricool.com:2096,www.petronaftco.com:8443,"
@@ -463,11 +475,7 @@ DEFAULT_EDGE_HOSTS = (
     "buyshoes.shop:2087,cu.zxy88.eu.org:2087,sellerlogic.com:443,"
     "oxylabs.io:2083,worldvectorlogo.com:2096,singapore"
 )
-EDGE_HOSTS = [
-    h.strip()
-    for h in os.environ.get("EDGE_HOSTS", DEFAULT_EDGE_HOSTS).split(",")
-    if h.strip()
-]
+EDGE_HOSTS = parse_edge_hosts(os.environ.get("EDGE_HOSTS", DEFAULT_EDGE_HOSTS))
 
 HOSTS_URL = os.environ.get("HOSTS_URL", "https://jerylihub.github.io/gate/hosts.txt")
 
@@ -478,7 +486,7 @@ def build_hosts_text(data):
     countries = data["countries"]
     # 入口: 默认用 7 个实测可用优选域名循环分配; 可用 HOSTS_ENTRY 覆盖(逗号分隔)
     _entry = os.environ.get("HOSTS_ENTRY", "").strip()
-    edge = [e.strip() for e in _entry.split(",") if e.strip()] or EDGE_HOSTS or [f"{EDT_DOMAIN}:443"]
+    edge = parse_edge_hosts(_entry) or EDGE_HOSTS or [f"{EDT_DOMAIN}:443"]
     lines = [
         "# edgetunnel「自定义优选IP」清单 (整段复制, 追加到后台现有内容后面)",
         f"# 自动更新: {data['generated_at']} (每 30 分钟重新检测)",
