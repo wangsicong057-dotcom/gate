@@ -51,7 +51,7 @@ VPNGATE_MIRROR = os.environ.get(
     "https://raw.githubusercontent.com/fdciabdul/Vpngate-Scraper-API/main/json/data.json",
 )
 # 已部署的 Cloudflare Worker 检测接口 (GET /check?proxyip=host:port, 实测确认)
-WORKER_CHECK_URL = os.environ.get("CHECK_WORKER", "https://check.helei.kdns.fr/check?sstp=vpn:vpn@")
+WORKER_CHECK_URL = os.environ.get("CHECK_WORKER", "https://ch.aishaniya-ao.com/check?sstp=vpn:vpn@")
 CONCURRENCY = max(1, int(os.environ.get("CHECK_CONCURRENCY", "32")))   # 与 Worker 网页端一致的并发模型
 CHECK_TIMEOUT = float(os.environ.get("CHECK_TIMEOUT", "90"))          # 单请求客户端超时 (秒)
 MAX_CHECK_NODES = int(os.environ.get("MAX_CHECK_NODES", "0"))         # 0=不限; 本地测试可设小值
@@ -460,8 +460,7 @@ EDGE_HOSTS = [
     h.strip()
     for h in os.environ.get(
         "EDGE_HOSTS",
-        "saas.072159.xyz:443,hzytjy.cn:443,ali.nonull.pp.ua:443,auto.dolby.dpdns.org:443,"
-        "cdn.cnno.de:443,saas.sin.fan:443,cf.777791.xyz:443",
+        ""aandd.co.jp:2096,dx.doi.org:2096,vayyar.com:8443,tracker.metricool.com:2096,www.petronaftco.com:8443,www.nomios.com:443,js.org:2083,www.government.is:2087,buyshoes.shop:2087,cu.zxy88.eu.org:2087,sellerlogic.com:443,oxylabs.io:2083,worldvectorlogo.com:2096,singapore.com:443,aimagazine.com:2087,db-ip.com:8443,www.ventusky.com:443,www.5h.com:2083,japan.com:2083,resources.biginterview.com:2087,cdnjs.loli.net:2087,help.kolet.com:2096,www.libvio.site:443,www.galgamex.net:2087,ip.sb:2096,assets.bizclikmedia.net:8443,www.doiting.com:2087,www.postman.com:2083,www.dwk.com:2083,hentaiverse.org:8443,ping.pe:2096,form.assaabloy.com:2053",
     ).split(",")
     if h.strip()
 ]
