@@ -456,12 +456,16 @@ def build_chains_text(data):
 
 # edgetunnel 入口地址池: 客户端直连 Cloudflare 的优选 IP:端口 (循环分配给每个国家节点当入口)
 # 可通过环境变量 EDGE_HOSTS 覆盖 (逗号分隔)
+DEFAULT_EDGE_HOSTS = (
+    "aandd.co.jp:2096,dx.doi.org:2096,vayyar.com:8443,"
+    "tracker.metricool.com:2096,www.petronaftco.com:8443,"
+    "www.nomios.com:443,js.org:2083,www.government.is:2087,"
+    "buyshoes.shop:2087,cu.zxy88.eu.org:2087,sellerlogic.com:443,"
+    "oxylabs.io:2083,worldvectorlogo.com:2096,singapore"
+)
 EDGE_HOSTS = [
     h.strip()
-    for h in os.environ.get(
-        "EDGE_HOSTS",
-        ""aandd.co.jp:2096,dx.doi.org:2096,vayyar.com:8443,tracker.metricool.com:2096,www.petronaftco.com:8443,www.nomios.com:443,js.org:2083,www.government.is:2087,buyshoes.shop:2087,cu.zxy88.eu.org:2087,sellerlogic.com:443,oxylabs.io:2083,worldvectorlogo.com:2096,singapore.com:443,aimagazine.com:2087,db-ip.com:8443,www.ventusky.com:443,www.5h.com:2083,japan.com:2083,resources.biginterview.com:2087,cdnjs.loli.net:2087,help.kolet.com:2096,www.libvio.site:443,www.galgamex.net:2087,ip.sb:2096,assets.bizclikmedia.net:8443,www.doiting.com:2087,www.postman.com:2083,www.dwk.com:2083,hentaiverse.org:8443,ping.pe:2096,form.assaabloy.com:2053",
-    ).split(",")
+    for h in os.environ.get("EDGE_HOSTS", DEFAULT_EDGE_HOSTS).split(",")
     if h.strip()
 ]
 
