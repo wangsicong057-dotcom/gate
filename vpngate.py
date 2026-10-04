@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 VPN Gate SSTP 节点检测流水线
-============================
+===============================
 流程:
   1. 获取 VPN Gate 原始节点 (官方 api/iphone CSV, 失败时回退 GitHub 预解析镜像)
   2. 只保留「带 TCP 入口」的中继 = SSTP 可用节点
